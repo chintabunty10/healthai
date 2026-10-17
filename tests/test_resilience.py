@@ -3,7 +3,9 @@ import time
 
 import pytest
 
-from app.resilience import Busy, CircuitBreaker, Limiter, SingleFlight
+import threading
+
+from app.resilience import Busy, CircuitBreaker, Limiter, SingleFlight, ThreadSingleFlight
 
 
 class Clock:
@@ -125,3 +127,36 @@ def test_limiter_releases_slot_after_error():
         return await lim.run(lambda: "fine")
 
     assert asyncio.run(main()) == "fine"
+
+
+def test_thread_singleflight_computes_once_for_a_burst_of_identical_calls():
+    sf, calls, results = ThreadSingleFlight(), [], []
+
+    def work():
+        calls.append(1)
+        time.sleep(0.1)
+        return "v"
+
+    ts = [threading.Thread(target=lambda: results.append(sf.do("k", work))) for _ in range(20)]
+    [t.start() for t in ts]; [t.join() for t in ts]
+    assert results == ["v"] * 20 and len(calls) == 1
+
+
+def test_thread_singleflight_shares_errors_and_allows_retry_afterwards():
+    sf = ThreadSingleFlight()
+    errors = []
+
+    def boom():
+        time.sleep(0.05)
+        raise RuntimeError("x")
+
+    def call():
+        try:
+            sf.do("k", boom)
+        except RuntimeError as e:
+            errors.append(e)
+
+    ts = [threading.Thread(target=call) for _ in range(4)]
+    [t.start() for t in ts]; [t.join() for t in ts]
+    assert len(errors) == 4
+    assert sf.do("k", lambda: "recovered") == "recovered"

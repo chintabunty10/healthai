@@ -238,13 +238,15 @@ class TieredCache:
         self.memory = memory
         self.store = store
 
-    def get(self, key: str):
+    def get(self, key: str, l2: bool = True):
+        """l2=False for cheap-to-recompute values: a network round trip to a remote DB can cost
+        more than recomputing, so those live in memory only."""
         kind = key.split(":", 1)[0]
         value = self.memory.get(key)
         if value is not None:
             CACHE_LOOKUPS.inc(kind=kind, result="l1")
             return value
-        if self.store:
+        if self.store and l2:
             value = self.store.get(key)
             if value is not None:
                 self.memory.set(key, value)  # promote to L1
@@ -253,9 +255,9 @@ class TieredCache:
         CACHE_LOOKUPS.inc(kind=kind, result="miss")
         return None
 
-    def set(self, key: str, value: Any) -> None:
+    def set(self, key: str, value: Any, l2: bool = True) -> None:
         self.memory.set(key, value)  # immediate
-        if self.store:
+        if self.store and l2:
             self.store.set(key, value)  # asynchronous write-behind
 
     def status(self) -> dict:

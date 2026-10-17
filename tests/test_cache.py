@@ -126,3 +126,13 @@ def test_concurrent_access_is_safe():
     ts = [threading.Thread(target=worker, args=(n,)) for n in range(8)]
     [t.start() for t in ts]; [t.join() for t in ts]
     assert cache.store.flush(5)
+
+
+def test_l2_false_keeps_cheap_values_out_of_the_database_entirely():
+    backend = FakeBackend()
+    store = store_for(backend)
+    cache = TieredCache(LRUCache(), store)
+    cache.set("predict:x", [1], l2=False)
+    assert cache.get("predict:x", l2=False) == [1]          # served from memory
+    assert cache.get("predict:other", l2=False) is None     # miss never reaches the DB
+    assert store.flush() and backend.writes == 0 and backend.reads == 0

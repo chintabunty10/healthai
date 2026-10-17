@@ -78,6 +78,42 @@ class SingleFlight:
             task.exception()  # mark retrieved; awaiting requests still receive it
 
 
+class ThreadSingleFlight:
+    """Blocking twin of SingleFlight for sync endpoints (which run in worker threads):
+    concurrent callers with the same key wait for the first caller's result instead of recomputing."""
+
+    class _Call:
+        __slots__ = ("event", "result", "error")
+
+        def __init__(self):
+            self.event, self.result, self.error = threading.Event(), None, None
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._calls: dict[str, "ThreadSingleFlight._Call"] = {}
+
+    def do(self, key: str, fn: Callable):
+        with self._lock:
+            call = self._calls.get(key)
+            leader = call is None
+            if leader:
+                call = self._calls[key] = self._Call()
+        if leader:
+            try:
+                call.result = fn()
+            except BaseException as exc:  # noqa: BLE001 - re-raised below, and to every waiter
+                call.error = exc
+            finally:
+                with self._lock:
+                    self._calls.pop(key, None)
+                call.event.set()
+        else:
+            call.event.wait()
+        if call.error is not None:
+            raise call.error
+        return call.result
+
+
 class Busy(Exception):
     """Raised when a Limiter could not admit the call within its queue timeout."""
 

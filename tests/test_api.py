@@ -1,9 +1,13 @@
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.cache import LRUCache, TieredCache
 from app.main import create_app
 from app.model import SymptomModel
+from app.resilience import Limiter
 
 
 class FakeExplainer:
@@ -159,3 +163,56 @@ def test_vision_failure_falls_back_to_text_with_warning(model):
         none = c.post("/api/predict/image", files=[("images", ("b.png", _png(), "image/png"))])
     assert ok.status_code == 200 and ok.json()["warnings"]
     assert none.status_code == 502
+
+
+# ---------- observability + load behaviour ----------
+class SlowExplainer(FakeExplainer):
+    def explain(self, condition, symptoms, fallback_text=""):
+        time.sleep(0.5)
+        return super().explain(condition, symptoms, fallback_text)
+
+    @staticmethod
+    def fallback(condition, fallback_text=""):
+        return "fallback text"
+
+
+def test_every_response_has_a_request_id_and_valid_incoming_ids_are_kept(client):
+    assert client.get("/api/health").headers["x-request-id"]
+    assert client.get("/api/health", headers={"X-Request-ID": "abc-123"}).headers["x-request-id"] == "abc-123"
+    bad = client.get("/api/health", headers={"X-Request-ID": "bad id with spaces!"})
+    assert bad.headers["x-request-id"] != "bad id with spaces!"      # untrusted input is replaced
+
+
+def test_metrics_endpoints_expose_request_cache_and_latency_series(client):
+    client.post("/api/predict", json={"symptoms": "cough, fever"})
+    client.post("/api/predict", json={"symptoms": "fever, cough"})   # second one is a cache hit
+    text = client.get("/metrics").text
+    assert 'healthai_http_requests_total{method="POST",route="/api/predict",status="200"}' in text
+    assert "healthai_http_request_duration_seconds_bucket" in text
+    assert 'healthai_cache_lookups_total{kind="predict",result="l1"}' in text
+    snap = client.get("/api/metrics").json()
+    assert any(r["labels"].get("route") == "/api/predict" and "p95_ms" in r
+               for r in snap["healthai_http_request_duration_seconds"])
+
+
+def test_health_reports_cache_and_in_flight_state(client):
+    body = client.get("/api/health").json()
+    assert "l1" in body["cache"] and "in_flight" in body
+
+
+def test_identical_concurrent_explain_requests_share_one_llm_call(model):
+    ex = SlowExplainer()
+    app = create_app(model=model, cache=TieredCache(LRUCache(10)), explainer=ex)
+    payload = {"condition": "Common Cold", "symptoms": ["cough"]}
+    with TestClient(app) as c, ThreadPoolExecutor(5) as pool:
+        results = [f.result() for f in [pool.submit(c.post, "/api/explain", json=payload) for _ in range(5)]]
+    assert all(r.status_code == 200 for r in results) and ex.calls == 1
+
+
+def test_saturated_llm_sheds_load_to_fallback_instead_of_queueing(model):
+    ex = SlowExplainer()
+    app = create_app(model=model, cache=TieredCache(LRUCache(10)), explainer=ex, llm_limiter=Limiter(1, 0.05))
+    with TestClient(app) as c, ThreadPoolExecutor(4) as pool:
+        futs = [pool.submit(c.post, "/api/explain", json={"condition": f"C{i}", "symptoms": ["cough"]}) for i in range(4)]
+        sources = [f.result().json()["source"] for f in futs]
+    assert "llm" in sources and "fallback" in sources
