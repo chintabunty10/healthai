@@ -1,0 +1,9 @@
+{
+  "n_unique_rows": 304,
+  "n_train_rows_after_augmentation": 3159,
+  "n_test_rows": 61,
+  "top1_full_symptoms": 1.0,
+  "top3_full_symptoms": 1.0,
+  "top1_3_symptoms_only": 0.803,
+  "top3_3_symptoms_only": 0.967
+}
