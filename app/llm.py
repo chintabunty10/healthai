@@ -41,5 +41,10 @@ class Explainer:
                     return text, "llm"
             except Exception as exc:  # noqa: BLE001
                 log.warning("LLM call failed: %s", type(exc).__name__)
+        return self.fallback(condition, fallback_text), "fallback"
+
+    @staticmethod
+    def fallback(condition: str, fallback_text: str = "") -> str:
+        """Non-LLM answer used when the provider is down, slow or saturated."""
         base = fallback_text or f"{condition} is a condition that can match the symptoms you reported."
-        return f"{base} Please consult a healthcare professional for a proper evaluation.", "fallback"
+        return f"{base} Please consult a healthcare professional for a proper evaluation."
