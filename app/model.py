@@ -38,6 +38,7 @@ def clean_name(name: str) -> str:
 class SymptomModel:
     def __init__(self, artifacts: Path = ROOT / "artifacts", data: Path = ROOT / "data"):
         self.model = joblib.load(artifacts / "model.joblib")
+        self.model.n_jobs = 1  # single-row inference: thread-pool overhead hurts under concurrent load
         vocab = json.loads((artifacts / "vocabulary.json").read_text())
         self.preprocessor = SymptomPreprocessor(vocab)
         desc = pd.read_csv(data / "symptom_Description.csv")

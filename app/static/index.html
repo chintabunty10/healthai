@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HealthAI Symptom Checker</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main>
+    <h1>HealthAI Symptom Checker</h1>
+    <p class="sub">Describe your symptoms to see possible conditions. This is general information, not a diagnosis.</p>
+
+    <form id="symptom-form" autocomplete="off">
+      <label for="symptoms">Your symptoms (comma separated)</label>
+      <input id="symptoms" name="symptoms" maxlength="500" placeholder="e.g. fever, cough, chills" required>
+      <button type="submit" id="submit-btn">Check symptoms</button>
+    </form>
+
+    <div id="status" role="status" aria-live="polite"></div>
+    <div id="urgent" class="urgent" hidden></div>
+
+    <section id="results" aria-label="Results" hidden>
+      <p id="matched" class="meta"></p>
+      <ul id="conditions"></ul>
+      <p id="disclaimer" class="disclaimer"></p>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
