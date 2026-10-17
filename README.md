@@ -1,7 +1,7 @@
 # HealthAI – Patient Symptom Checker
 
 A small FastAPI web app: a user types symptoms, a pre-trained scikit-learn model returns ranked
-possible conditions, and an LLM (Groq, OpenAI-compatible API) explains each one on request.
+possible conditions (optionally from photos too, via Gemini), and an LLM (Groq, OpenAI-compatible API) explains each one on request.
 **Informational only – not a diagnosis.**
 
 ## Quick start
@@ -9,14 +9,18 @@ possible conditions, and an LLM (Groq, OpenAI-compatible API) explains each one 
 ```bash
 python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env                                   # then fill in GROQ_API_KEY / DATABASE_URL
+cp .env.example .env                                   # then fill in GROQ_API_KEY / GEMINI_API_KEY / DATABASE_URL
 python -m training.train                               # optional: artifacts/ is committed, this retrains
 uvicorn app.main:app --reload                          # open http://localhost:8000
 pytest -q                                              # run the tests
 ```
 
 The app runs without any keys: without `GROQ_API_KEY` explanations fall back to the dataset
-description; without `DATABASE_URL` the cache is in-memory only.
+description; without `GEMINI_API_KEY` photo upload returns a clear 503 and text still works; without
+`DATABASE_URL` the cache is in-memory only.
+
+Notebooks (dataset exploration + image demo): `pip install -r requirements-notebooks.txt`, then
+`jupyter notebook notebooks/`.
 
 Load test (100 concurrent users):
 ```bash
@@ -27,14 +31,15 @@ locust -f loadtest/locustfile.py --headless -u 100 -r 20 -t 60s --host http://lo
 
 ```
 Browser (static HTML/JS)
-   │  POST /api/predict           POST /api/explain
+   │  POST /api/predict (text)   POST /api/predict/image (photos [+ text])   POST /api/explain
    ▼                               ▼
 FastAPI (app/main.py) ── validation (pydantic) ──────────────┐
    │                                                          │
    ├─ preprocessing.py  parse → normalize → alias/fuzzy match → multi-hot vector
    ├─ cache.py          LRU (in-memory)  ──miss──▶  Supabase Postgres (persistent)
    ├─ model.py          RandomForest top-k + descriptions/precautions + red-flag check
-   └─ llm.py            Groq chat completion (timeout, retry, safe fallback)
+   ├─ llm.py            Groq chat completion (timeout, retry, safe fallback)
+   └─ vision.py         Gemini image understanding (validate → downscale → vocabulary-only symptoms)
 training/train.py  →  artifacts/model.joblib + vocabulary.json + metrics.json
 ```
 
@@ -43,6 +48,8 @@ training/train.py  →  artifacts/model.joblib + vocabulary.json + metrics.json
 | Symptoms in → conditions out | `POST /api/predict`, `app/model.py` |
 | Preprocessing/normalization | `app/preprocessing.py` (tests in `tests/test_preprocessing.py`) |
 | LLM explanations | `POST /api/explain`, `app/llm.py` |
+| Image input (extra) | `POST /api/predict/image`, `app/vision.py` |
+| Dataset understanding | `notebooks/01_data_exploration_preprocessing.ipynb` |
 | UI with form + results | `app/static/` |
 | Caching | `app/cache.py` (key = sorted, normalized symptom set) |
 | Concurrency | stateless workers, thread-safe LRU, `loadtest/locustfile.py` |
@@ -74,11 +81,18 @@ Dataset: public "Disease Symptom Prediction" CSVs (41 diseases, 131 symptoms). K
    occasionally mis-map; unrecognised phrases are shown to the user rather than silently dropped.
 4. **Top-k probabilities, not a diagnosis.** The UI shows ranked matches with percentages, a
    disclaimer, and an urgent warning when red-flag symptoms (e.g. chest pain) are present.
-5. **Plain HTML/JS instead of a SPA framework.** Fewer moving parts and no build step; text is
+5. **Image understanding via a separate vision LLM, not a vision classifier.** Gemini only *describes visible
+   signs*, constrained to our symptom vocabulary; the trained model still ranks conditions, so photos
+   never produce a diagnosis directly. Anything outside the vocabulary (including text embedded in an
+   image) is discarded. Cost: an extra network call (~seconds), so results are cached by image hash;
+   if Gemini fails and text symptoms exist, the app degrades to text-only with a warning.
+6. **Plain HTML/JS instead of a SPA framework.** Fewer moving parts and no build step; text is
    inserted with `textContent` (no XSS). Less polish than React, but fits the time budget.
 
 ## Security and correctness
 - Input validated server-side (length, count, per-symptom length); parameterized SQL only.
+- Uploads: max 3 images, 5 MB each, JPEG/PNG/WEBP verified with Pillow (not trusting the MIME type), pixel
+  cap against decompression bombs, downscaled before being sent to Gemini; images are never stored.
 - Secrets only via environment variables; `.env` is git-ignored, `.env.example` is committed.
 - LLM prompt forbids diagnoses and drug doses; output is shown as plain text.
 
@@ -87,14 +101,14 @@ Dataset: public "Disease Symptom Prediction" CSVs (41 diseases, 131 symptoms). K
 - No auth or rate limiting (out of scope per brief); add before any real deployment.
 
 ## Testing
-`pytest -q` covers preprocessing, cache behaviour (LRU eviction, write-through/promotion, DB-down
+`pytest -q` covers preprocessing, image validation and Gemini-output parsing (with a fake client, no network), cache behaviour (LRU eviction, write-through/promotion, DB-down
 no-op) and the API (validation, caching, red flags, explain caching/fallback, UI served).
 
 Load test result (fill in after running): `<users=100, duration=60s, median=… ms, p95=… ms, failures=…>`
 
 ## AI usage
 - **Claude (Anthropic)** helped plan the architecture and drafted most of the code, tests and this README.
-- **Groq (Llama model via OpenAI-compatible API)** is used at runtime for explanations.
+- **Groq (Llama model via OpenAI-compatible API)** is used at runtime for explanations; **Google Gemini** for image understanding.
 - What I verified or changed afterwards: *(edit this to reflect what you actually did)* ran the
   tests locally, reviewed the dataset quirks (duplicates, label typos), checked the metrics,
   tested the LLM and Supabase connections with my own keys, and adjusted prompts/aliases.

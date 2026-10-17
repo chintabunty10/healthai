@@ -5,6 +5,8 @@ const btn = document.getElementById("submit-btn");
 const statusEl = document.getElementById("status");
 const urgentEl = document.getElementById("urgent");
 const results = document.getElementById("results");
+const imagesInput = document.getElementById("images");
+const MAX_IMAGES = 3, MAX_BYTES = 5 * 1024 * 1024;
 const list = document.getElementById("conditions");
 let lastSymptoms = [];
 
@@ -70,15 +72,26 @@ function renderCondition(c) {
 form.addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const text = input.value.trim();
-  if (!text) { setStatus("Please enter at least one symptom.", true); return; }
+  const files = Array.from(imagesInput.files);
+  if (!text && files.length === 0) { setStatus("Enter at least one symptom or add a photo.", true); return; }
+  if (files.length > MAX_IMAGES) { setStatus("Please choose at most " + MAX_IMAGES + " photos.", true); return; }
+  if (files.some((f) => f.size > MAX_BYTES)) { setStatus("Each photo must be under 5 MB.", true); return; }
   btn.disabled = true;
-  setStatus("Analysing…");
+  setStatus(files.length ? "Analysing photo(s) and symptoms…" : "Analysing…");
   urgentEl.hidden = true;
   try {
-    const r = await fetch("/api/predict", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symptoms: text }),
-    });
+    let r;
+    if (files.length) {                       // photos present -> multipart image endpoint
+      const fd = new FormData();
+      fd.append("symptoms", text);
+      files.forEach((f) => fd.append("images", f));
+      r = await fetch("/api/predict/image", { method: "POST", body: fd });
+    } else {                                  // text only -> JSON endpoint
+      r = await fetch("/api/predict", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symptoms: text }),
+      });
+    }
     const data = await r.json();
     if (!r.ok) throw new Error(errorText(data));
     lastSymptoms = data.matched_symptoms;
@@ -86,6 +99,12 @@ form.addEventListener("submit", async (ev) => {
       "Understood: " + data.matched_symptoms.join(", ").replaceAll("_", " ") +
       (data.unmatched_symptoms.length ? " · Not recognised: " + data.unmatched_symptoms.join(", ") : "") +
       (data.cached ? " · (cached result)" : "");
+    const imgDesc = document.getElementById("image-desc");
+    imgDesc.hidden = !data.image_description;
+    imgDesc.textContent = data.image_description ? "From your photo(s): " + data.image_description : "";
+    const warn = document.getElementById("warnings");
+    warn.hidden = !(data.warnings && data.warnings.length);
+    warn.textContent = (data.warnings || []).join(" ");
     list.replaceChildren(...data.conditions.map(renderCondition));
     document.getElementById("disclaimer").textContent = data.disclaimer;
     if (data.urgent_warning) { urgentEl.textContent = data.urgent_warning; urgentEl.hidden = false; }

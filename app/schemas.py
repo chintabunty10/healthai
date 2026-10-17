@@ -26,6 +26,9 @@ class PredictResponse(BaseModel):
     cached: bool
     disclaimer: str
     urgent_warning: str | None = None
+    image_description: str | None = None
+    image_symptoms: list[str] = []
+    warnings: list[str] = []
 
 
 class ExplainRequest(BaseModel):

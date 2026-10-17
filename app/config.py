@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_base_url: str = "https://api.groq.com/openai/v1"
     groq_model: str = "llama-3.3-70b-versatile"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     database_url: str = ""
     cache_max_items: int = 1000
     top_k: int = 5

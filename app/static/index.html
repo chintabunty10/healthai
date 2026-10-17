@@ -13,7 +13,10 @@
 
     <form id="symptom-form" autocomplete="off">
       <label for="symptoms">Your symptoms (comma separated)</label>
-      <input id="symptoms" name="symptoms" maxlength="500" placeholder="e.g. fever, cough, chills" required>
+      <input id="symptoms" name="symptoms" maxlength="500" placeholder="e.g. fever, cough, chills">
+      <label for="images">Optional: photo(s) of the affected area (up to 3, JPEG/PNG/WEBP, 5 MB each)</label>
+      <input id="images" name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+      <p class="meta" id="image-note">Photos are sent to Google Gemini to describe visible signs and are not stored by this app.</p>
       <button type="submit" id="submit-btn">Check symptoms</button>
     </form>
 
@@ -22,6 +25,8 @@
 
     <section id="results" aria-label="Results" hidden>
       <p id="matched" class="meta"></p>
+      <p id="image-desc" class="meta" hidden></p>
+      <p id="warnings" class="meta" hidden></p>
       <ul id="conditions"></ul>
       <p id="disclaimer" class="disclaimer"></p>
     </section>

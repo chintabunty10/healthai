@@ -90,3 +90,72 @@ def test_fallback_explanations_are_not_cached(model):
 
 def test_health_endpoint(client):
     assert client.get("/api/health").json()["status"] == "ok"
+
+
+# ---------- image endpoint ----------
+import io as _io
+
+from PIL import Image as _Image
+
+from app.vision import ImageFindings
+
+
+def _png() -> bytes:
+    buf = _io.BytesIO()
+    _Image.new("RGB", (40, 40), (210, 90, 90)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+class FakeVision:
+    def __init__(self, enabled=True, symptoms=("itching", "skin_rash"), fail=False):
+        self.enabled, self.symptoms, self.fail, self.calls = enabled, list(symptoms), fail, 0
+    def analyze(self, images):
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("boom")
+        return ImageFindings(self.symptoms, "Red itchy patches on skin")
+
+
+def _app(model, vision):
+    return create_app(model=model, cache=TieredCache(LRUCache(100)), explainer=FakeExplainer(), vision=vision)
+
+
+def test_image_endpoint_merges_image_and_text_symptoms(model):
+    with TestClient(_app(model, FakeVision())) as c:
+        r = c.post("/api/predict/image", data={"symptoms": "nodal skin eruptions"},
+                   files=[("images", ("a.png", _png(), "image/png"))])
+    body = r.json()
+    assert r.status_code == 200
+    assert {"itching", "skin_rash", "nodal_skin_eruptions"} <= set(body["matched_symptoms"])
+    assert body["image_symptoms"] == ["itching", "skin_rash"] and body["image_description"]
+    assert body["conditions"][0]["name"] == "Fungal infection"
+
+
+def test_image_analysis_is_cached_by_image_hash(model):
+    v = FakeVision()
+    with TestClient(_app(model, v)) as c:
+        for _ in range(2):
+            c.post("/api/predict/image", files=[("images", ("a.png", _png(), "image/png"))])
+    assert v.calls == 1
+
+
+def test_image_endpoint_rejects_non_images_and_too_many(model):
+    with TestClient(_app(model, FakeVision())) as c:
+        bad = c.post("/api/predict/image", files=[("images", ("a.png", b"hello", "image/png"))])
+        many = c.post("/api/predict/image", files=[("images", (f"{i}.png", _png(), "image/png")) for i in range(4)])
+    assert bad.status_code == 422 and many.status_code == 422
+
+
+def test_image_endpoint_503_when_vision_not_configured(model):
+    with TestClient(_app(model, FakeVision(enabled=False))) as c:
+        r = c.post("/api/predict/image", files=[("images", ("a.png", _png(), "image/png"))])
+    assert r.status_code == 503
+
+
+def test_vision_failure_falls_back_to_text_with_warning(model):
+    with TestClient(_app(model, FakeVision(fail=True))) as c:
+        ok = c.post("/api/predict/image", data={"symptoms": "cough, fever"},
+                    files=[("images", ("a.png", _png(), "image/png"))])
+        none = c.post("/api/predict/image", files=[("images", ("b.png", _png(), "image/png"))])
+    assert ok.status_code == 200 and ok.json()["warnings"]
+    assert none.status_code == 502
