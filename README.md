@@ -53,6 +53,7 @@ training/train.py  →  artifacts/model.joblib + vocabulary.json + metrics.json
 | LLM explanations | `POST /api/explain`, `app/llm.py` |
 | Image input (extra) | `POST /api/predict/image`, `app/vision.py` |
 | Dataset understanding | `notebooks/01_data_exploration_preprocessing.ipynb` |
+| Model selection and training workbench | `notebooks/03_model_selection_and_training.ipynb` (CV, model zoo, tuning, calibration, export) |
 | UI with form + results | `app/static/` |
 | Caching | `app/cache.py` (key = sorted, normalized symptom set) |
 | Metrics and logs | `app/metrics.py`, `app/logging_config.py`, middleware in `app/main.py` |
