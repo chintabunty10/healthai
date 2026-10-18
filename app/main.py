@@ -93,7 +93,7 @@ def create_app(**overrides) -> FastAPI:
             HTTP_INFLIGHT.dec()
             elapsed = time.perf_counter() - start
             route = request.scope.get("route")
-            path = getattr(route, "path", None) or "other"   # route template: bounded label cardinality
+            path = getattr(route, "path", None) or ("/static" if request.url.path.startswith("/static") else "other")  # bounded label cardinality
             if path not in QUIET_PATHS:
                 HTTP_REQUESTS.inc(method=request.method, route=path, status=str(status))
                 HTTP_LATENCY.observe(elapsed, route=path)
@@ -151,6 +151,12 @@ def create_app(**overrides) -> FastAPI:
     @app.get("/api/metrics")
     def json_metrics():
         return REGISTRY.snapshot()
+
+    @app.get("/api/symptoms")
+    def symptom_suggestions():
+        """Known symptom names for the UI's autocomplete (human-readable, sorted)."""
+        vocab = app.state.h["model"].preprocessor.vocabulary
+        return {"symptoms": sorted(v.replace("_", " ") for v in vocab)}
 
     # ------------------------------------------------------------------ prediction endpoints
     @app.post("/api/predict", response_model=PredictResponse)

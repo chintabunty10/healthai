@@ -54,7 +54,7 @@ training/train.py  →  artifacts/model.joblib + vocabulary.json + metrics.json
 | Image input (extra) | `POST /api/predict/image`, `app/vision.py` |
 | Dataset understanding | `notebooks/01_data_exploration_preprocessing.ipynb` |
 | Model selection and training workbench | `notebooks/03_model_selection_and_training.ipynb` (CV, model zoo, tuning, calibration, export) |
-| UI with form + results | `app/static/` |
+| UI with form + results | `app/static/` (results area always visible; tag input with suggestions from `/api/symptoms`; photo drop zone) |
 | Caching | `app/cache.py` (key = sorted, normalized symptom set) |
 | Metrics and logs | `app/metrics.py`, `app/logging_config.py`, middleware in `app/main.py` |
 | Concurrency | stateless workers, thread-safe LRU, `loadtest/locustfile.py` |
@@ -175,6 +175,8 @@ The Locust run exits non-zero if the failure ratio exceeds 1% or p95 exceeds 500
 ## Testing
 `pytest -q` covers preprocessing, resilience (circuit breaker states, single-flight, load shedding), metrics and log formatting, image validation and Gemini-output parsing (with a fake client, no network), cache behaviour (LRU eviction, write-through/promotion, DB-down
 no-op) and the API (validation, caching, red flags, explain caching/fallback, UI served).
+
+Front-end logic is exercised without a browser by `node tests/ui_smoke.js` (runs the real `app.js` against a minimal fake DOM; it does not replace a visual check in a real browser).
 
 Load test result (fill in after running): `<users=100, duration=60s, median=… ms, p95=… ms, failures=…>`
 

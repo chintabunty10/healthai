@@ -41,6 +41,18 @@ def test_ui_page_has_form_and_results_area(client):
     assert 'id="symptom-form"' in html and 'id="results"' in html
 
 
+def test_symptom_suggestions_endpoint_feeds_the_ui_autocomplete(client):
+    body = client.get("/api/symptoms").json()
+    assert "skin rash" in body["symptoms"] and len(body["symptoms"]) > 100
+    assert body["symptoms"] == sorted(body["symptoms"])
+
+
+def test_page_always_shows_results_area_with_empty_state(client):
+    html = client.get("/").text
+    assert 'id="results"' in html and "Your results will appear here" in html
+    assert 'id="symptom-form"' in html and 'id="submit-btn"' in html
+
+
 def test_predict_returns_conditions(client):
     r = client.post("/api/predict", json={"symptoms": "itching, skin rash, nodal skin eruptions"})
     assert r.status_code == 200
