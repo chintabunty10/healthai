@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .venv/
 venv/
 __pycache__/
@@ -6,4 +8,5 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 *.log
-loadtest/results*/
+final.zip
+loadtest/results_*.csv
