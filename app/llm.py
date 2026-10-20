@@ -29,7 +29,7 @@ class Explainer:
                 resp = self.client.chat.completions.create(
                     model=self.model,
                     temperature=0.2,
-                    max_tokens=300,
+                    max_tokens=500,
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": (
